@@ -22,7 +22,6 @@ class LogEvent:
     data: str
 
     def to_xml(self) -> str:
-        """Convert LogEvent to XML string"""
         root = ET.Element("LogEvent")
 
         service_elem = ET.SubElement(root, "service")

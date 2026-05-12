@@ -1,3 +1,5 @@
+# i dont know how to properly implement everything yet but the idea is that we can with opencv
+# and than display that information to a home assistant dashboard
 import logger
 import qrcode
 import cv2
@@ -6,7 +8,13 @@ import pika
 # used for env variables
 import os
 import sys
-from homeassistant_api import Client
+import sqlite3
+
+
+# init sqlite database and save the temporary users
+con = sqlite3.connect('users.db')
+
+
 
 # boolean value to check if the access mode is enabled
 # True = access/badge verification mode
@@ -14,7 +22,6 @@ from homeassistant_api import Client
 ACCESS_MODE = True  # default to access mode
 
 def load_config():
-    """Load and validate environment variables."""
     try:
         config = {
             'rq_host': os.environ['RABBITMQ_HOST'],
@@ -62,6 +69,7 @@ delay = 1
 window_name = 'Desiderius Festival Badge Scanner'
 
 try:
+    # the opencv qr code detectror
     qcd = cv2.QRCodeDetector()
     cap = cv2.VideoCapture(camera_id)
     if not cap.isOpened():
@@ -71,6 +79,16 @@ try:
 except Exception as e:
     logger.error(f"Camera initialization error: {e}")
     sys.exit(1)
+
+
+# straight forward becaus the information is already decoded in the qr code.
+# im taking the guess that we are decoding the uuid of the user and thats it
+# the rest of the informmation are things we can check at run time
+def parse_uuid_from_qr_code(qr_data: str): -> uuid.UUID | None:
+    try:
+        return uuid.UUID(qr_data.strip())
+    expect: ValueError
+        return None
 
 
 def authenticate_user(badge_id: str) -> bool:
@@ -130,6 +148,7 @@ def main() -> int:
             ACCESS_MODE = False
             logger.info("Mode: PAYMENT")
         elif sys.argv[1] == '--help':
+            # cool comment he. ai generated
             print("""
 Badge Scanner for Desiderius Festival
 
@@ -152,7 +171,9 @@ Controls:
     logger.info("Starting badge scanner main loop...")
 
     try:
-        # QR code detection loop
+        # QR code detection loop because we are scanning in video mode
+        # we run  a prebuilt detection loop that checks for qr codes.
+        # this is hardware intensive. but unless we can get a bar code scanner this is the thing we do
         while True:
             ret, frame = cap.read()
             if not ret:
