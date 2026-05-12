@@ -1,5 +1,0 @@
-qrcode
-opencv-python
-pika
-homeassistant-api
-sqlite3

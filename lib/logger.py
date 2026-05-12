@@ -6,7 +6,6 @@ import pika
 from typing import Optional
 
 class SeverityType(str, Enum):
-    """Log severity levels"""
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
