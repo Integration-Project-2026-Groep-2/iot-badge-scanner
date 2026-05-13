@@ -26,7 +26,7 @@ jobs:
       - name: Build image
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          docker build -t ${{ env.IMAGE }}:sha-${SHORT_SHA} .
+          docker build -t ${{ env.IMAGE }}:sha-${SHORT_SHA} server/.
           docker tag ${{ env.IMAGE }}:sha-${SHORT_SHA} ${{ env.IMAGE }}:latest-dev
 
       - name: Push tags
