@@ -1,9 +1,15 @@
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import xml.etree.ElementTree as ET
-import pika
 from typing import Optional
+
+import pika
+from pika.adapters.base_connection import BaseConnection as BaseConnection
+from pika.adapters.blocking_connection import BlockingConnection as BlockingConnection
+from pika.adapters.select_connection import IOLoop as IOLoop
+from pika.adapters.select_connection import SelectConnection as SelectConnection
+
 
 class SeverityType(str, Enum):
     DEBUG = "DEBUG"
@@ -27,7 +33,7 @@ class LogEvent:
         service_elem.text = self.service
 
         level_elem = ET.SubElement(root, "level")
-        level_elem.text = self.level.value  # Enum -> string
+        level_elem.text = self.level.value
 
         timestamp_elem = ET.SubElement(root, "timestamp")
         timestamp_elem.text = self.timestamp.isoformat()
@@ -38,7 +44,6 @@ class LogEvent:
         return ET.tostring(root, encoding="unicode")
 
 
-
 LOGGER_CONFIG = {
     "exchange": "logs.direct",
     "exchange_type": "direct",
@@ -47,10 +52,12 @@ LOGGER_CONFIG = {
 }
 
 
-
 class Logger:
-
-    def __init__(self, service_name: str, channel: pika.adapters.blocking_connection.BlockingChannel):
+    def __init__(
+        self,
+        service_name: str,
+        channel: pika.adapters.blocking_connection.BlockingChannel,
+    ):
         self.service_name = service_name
         self.channel = channel
         self._setup_exchange()
@@ -86,6 +93,7 @@ class Logger:
             )
         except pika.exceptions.ChannelClosed as e:
             print(f"Failed to publish log: {e}")
+
     # Convenience methods
     def debug(self, msg: str) -> None:
         self._publish(SeverityType.DEBUG, msg)
@@ -103,8 +111,12 @@ class Logger:
         self._publish(SeverityType.CRITICAL, msg)
 
 
-async def log(channel: pika.adapters.blocking_connection.BlockingChannel,
-              service: str, severity: SeverityType, data: str) -> None:
+async def log(
+    channel: pika.adapters.blocking_connection.BlockingChannel,
+    service: str,
+    severity: SeverityType,
+    data: str,
+) -> None:
     # Create event
     event = LogEvent(
         service=service,
@@ -125,7 +137,6 @@ async def log(channel: pika.adapters.blocking_connection.BlockingChannel,
         )
     except Exception as e:
         print(f"Failed to publish log: {e}")
-
 
 
 if __name__ == "__main__":

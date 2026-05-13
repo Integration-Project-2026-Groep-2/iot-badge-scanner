@@ -1,18 +1,20 @@
+import json
 import os
 import sys
-import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pika
 from lxml import etree
-
 
 # Config
 HOST = os.getenv("INTERNAL_HOST", "0.0.0.0")
 PORT = int(os.getenv("EXTERNAL_PORT", "8080"))
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+
 
 # TODO(nasr): throw this in an iteratable array or some config  block later or a map could also be cool
 CHECKIN_EXCHANGE = "users.checkin.topic"
@@ -35,8 +37,10 @@ def load_xsd_schema(path: str) -> etree.XMLSchema:
 def setup_rabbitmq():
     global channel
 
+    credentials = pika.PlainCredentials(username=RABBITMQ_USER, password=RABBITMQ_PASS)
+
     connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=RABBITMQ_HOST)
+        pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=credentials)
     )
 
     channel = connection.channel()
