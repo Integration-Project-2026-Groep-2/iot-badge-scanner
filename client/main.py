@@ -8,6 +8,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import cv2
 import requests
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
