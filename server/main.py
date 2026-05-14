@@ -20,13 +20,19 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 CHECKIN_EXCHANGE = "users.checkin.topic"
 CHECKIN_ROUTING_KEY = "routing.user.checkin"
 
-XSD_PATH = "./xsd/checkin.xsd"
+HEARTBEAT_EXCHANGE = "heartbeat.direct"
+HEARTBEAT_KEY = "routing.heartbeat"
 
+CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
+HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
 
 channel = None
 CHECKIN_XSD_SCHEMA = None
+HEARTBEAT_XSD_SCHEMA = None
 
 
+#########################################################################
+# Helper functions
 # XSD loading
 def load_xsd_schema(path: str) -> etree.XMLSchema:
     with open(path, "rb") as f:
@@ -52,19 +58,24 @@ def setup_rabbitmq():
     )
 
 
-def build_xml(data: dict) -> bytes:
+#########################################################################
+
+
+####################################################
+# checkin building, validation, and publishing
+def build_checkin_xml(data: dict) -> bytes:
     root = etree.Element("CheckIn")
 
     id_el = etree.SubElement(root, "id")
     id_el.text = str(data["id"])
 
     ts_el = etree.SubElement(root, "timestamp")
-    ts_el.text = data.get("timestamp") or datetime.utcnow().isoformat()
+    ts_el.text = data.get("timestamp") or datetime.now().isoformat()
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
-def validate_xml(xml_bytes: bytes) -> bool:
+def validate_checkin_xml(xml_bytes: bytes) -> bool:
     try:
         doc = etree.fromstring(xml_bytes)
         return CHECKIN_XSD_SCHEMA.validate(doc)
@@ -72,12 +83,58 @@ def validate_xml(xml_bytes: bytes) -> bool:
         return False
 
 
-def publish(xml_bytes: bytes):
+def publish_checkin(xml_bytes: bytes):
     channel.basic_publish(
         exchange=CHECKIN_EXCHANGE,
         routing_key=CHECKIN_ROUTING_KEY,
         body=xml_bytes,
     )
+
+
+#####################################################
+
+####################################################
+# heartbeat building, validation and publishing
+
+
+def build_heartbeat_xml(data: dict) -> bytes:
+
+    root = etree.Element("Heartbeat")
+
+    serv_id_el = e.tree.SubElement(root, "serviceId")
+    serv_id_el.ttext = str(data["serviceId"])
+
+    ts_el = etree.SubElement(root, "timestamp")
+    ts_el.text = data.get("timestamp") or datetime.now().isoformat()
+
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+
+def validate_heaartbeat_xml(xml_bytes: bytes) -> bool:
+    try:
+        doc = etree.fromstring(xml_bytes)
+        return HEARTBEAT_XSD_SCHEMA.validate(doc)
+    except Exception:
+        return False
+
+
+def publish_heartbeat(xml_bytes: bytes):
+    channel.basic_publish(
+        exchange=HEARTBEAT_EXCHANGE, routing_key=HEARTBEAT_ROUTING_KEY, body=xml_bytes
+    )
+
+
+def send_heartbeat():
+    data = build_heartbeat_xml("BADGE_SCANNER")
+    validated = validate_heartbeat_xml(data)
+    if validated == false:
+        logger.error("failed to validate the heartbeat")
+        return
+    publih_heartbeat(data)
+
+
+#####################################################
+# HTTP stuff
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,13 +145,13 @@ class Handler(BaseHTTPRequestHandler):
 
             data = json.loads(body)
 
-            xml_bytes = build_xml(data)
+            xml_bytes = build_checkin_xml(data)
 
-            if not validate_xml(xml_bytes):
+            if not validate_checkin_xml(xml_bytes):
                 self._respond(400, b"Invalid XML schema")
                 return
 
-            publish(xml_bytes)
+            publish_checkin(xml_bytes)
             self._respond(200, b"OK: TOPPIE FLOPPIE")
 
         except Exception:
@@ -115,10 +172,14 @@ def listen():
     server.serve_forever()
 
 
+#####################################################
+
+
 def main():
     global CHECKIN_XSD_SCHEMA
 
-    CHECKIN_XSD_SCHEMA = load_xsd_schema(XSD_PATH)
+    CHECKIN_XSD_SCHEMA = load_xsd_schema(CHECKIN_XSD_PATH)
+    HEARTBEAT_XSD_SCHEMA = load_xsd_schema(HEARTBEAT_XSD_PATH)
 
     setup_rabbitmq()
     listen()

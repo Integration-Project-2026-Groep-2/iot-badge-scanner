@@ -2,7 +2,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 import pika
 from pika.adapters.base_connection import BaseConnection as BaseConnection
