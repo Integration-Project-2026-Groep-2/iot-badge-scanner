@@ -34,7 +34,6 @@ HEARTBEAT_ROUTING_KEY = "routing.heartbeat"
 CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
 HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
 
-channel = None
 CHECKIN_XSD_SCHEMA = None
 HEARTBEAT_XSD_SCHEMA = None
 
@@ -54,11 +53,7 @@ def load_xsd_schema(path: str) -> etree.XMLSchema:
     return etree.XMLSchema(xsd_doc)
 
 
-def setup_rabbitmq():
-    global channel
-
-    logger.info("connecting to RabbitMQ host=%s", RABBITMQ_HOST)
-
+def get_rabbitmq_connection():
     credentials = pika.PlainCredentials(
         username=RABBITMQ_USER,
         password=RABBITMQ_PASS,
@@ -68,28 +63,42 @@ def setup_rabbitmq():
         pika.ConnectionParameters(
             host=RABBITMQ_HOST,
             credentials=credentials,
+            heartbeat=600,  # 10 minute heartbeat
+            blocked_connection_timeout=300,
+            connection_attempts=3,
+            retry_delay=2,
         )
     )
+    return connection
 
-    channel = connection.channel()
 
-    logger.info("declaring exchange: %s", CHECKIN_EXCHANGE)
+def setup_rabbitmq():
+    logger.info("initializing RabbitMQ exchanges")
 
-    channel.exchange_declare(
-        exchange=CHECKIN_EXCHANGE,
-        exchange_type="topic",
-        durable=True,
-    )
+    try:
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
 
-    logger.info("declaring exchange: %s", HEARTBEAT_EXCHANGE)
+        logger.info("declaring exchange: %s", CHECKIN_EXCHANGE)
+        channel.exchange_declare(
+            exchange=CHECKIN_EXCHANGE,
+            exchange_type="topic",
+            durable=True,
+        )
 
-    channel.exchange_declare(
-        exchange=HEARTBEAT_EXCHANGE,
-        exchange_type="direct",
-        durable=True,
-    )
+        logger.info("declaring exchange: %s", HEARTBEAT_EXCHANGE)
+        channel.exchange_declare(
+            exchange=HEARTBEAT_EXCHANGE,
+            exchange_type="direct",
+            durable=True,
+        )
 
-    logger.info("RabbitMQ setup complete")
+        logger.info("RabbitMQ setup complete")
+        connection.close()
+
+    except Exception as e:
+        logger.exception("Failed to initialize RabbitMQ: %s", e)
+        raise
 
 
 #########################################################################
@@ -147,13 +156,38 @@ def publish_checkin(xml_bytes: bytes):
         CHECKIN_ROUTING_KEY,
     )
 
-    channel.basic_publish(
-        exchange=CHECKIN_EXCHANGE,
-        routing_key=CHECKIN_ROUTING_KEY,
-        body=xml_bytes,
-    )
+    connection = None
+    try:
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
 
-    logger.info("checkin message published")
+        channel.basic_publish(
+            exchange=CHECKIN_EXCHANGE,
+            routing_key=CHECKIN_ROUTING_KEY,
+            body=xml_bytes,
+            properties=pika.BasicProperties(
+                content_type='application/xml',
+                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
+            ),
+        )
+
+        logger.info("checkin message published")
+
+    except pika.exceptions.StreamLostError as e:
+        logger.error("RabbitMQ connection lost: %s", e)
+        raise
+    except pika.exceptions.ChannelClosedByBroker as e:
+        logger.error("RabbitMQ channel closed by broker: %s", e)
+        raise
+    except Exception as e:
+        logger.exception("Failed to publish checkin: %s", e)
+        raise
+    finally:
+        if connection:
+            try:
+                connection.close()
+            except Exception as e:
+                logger.warning("Error closing connection: %s", e)
 
 
 #####################################################
@@ -213,13 +247,32 @@ def publish_heartbeat(xml_bytes: bytes):
         HEARTBEAT_ROUTING_KEY,
     )
 
-    channel.basic_publish(
-        exchange=HEARTBEAT_EXCHANGE,
-        routing_key=HEARTBEAT_ROUTING_KEY,
-        body=xml_bytes,
-    )
+    connection = None
+    try:
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
 
-    logger.info("heartbeat published")
+        channel.basic_publish(
+            exchange=HEARTBEAT_EXCHANGE,
+            routing_key=HEARTBEAT_ROUTING_KEY,
+            body=xml_bytes,
+            properties=pika.BasicProperties(
+                content_type='application/xml',
+                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
+            ),
+        )
+
+        logger.info("heartbeat published")
+
+    except Exception as e:
+        logger.exception("Failed to publish heartbeat: %s", e)
+        raise
+    finally:
+        if connection:
+            try:
+                connection.close()
+            except Exception as e:
+                logger.warning("Error closing connection: %s", e)
 
 
 def send_heartbeat():
