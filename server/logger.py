@@ -35,7 +35,8 @@ class LogEvent:
         level_elem.text = self.level.value
 
         timestamp_elem = ET.SubElement(root, "timestamp")
-        timestamp_elem.text = self.timestamp.isoformat()
+        # Use timezone-aware ISO format for timestamps
+        timestamp_elem.text = self.timestamp.astimezone().isoformat()
 
         data_elem = ET.SubElement(root, "data")
         data_elem.text = self.data
@@ -76,7 +77,7 @@ class Logger:
         event = LogEvent(
             service=self.service_name,
             level=severity,
-            timestamp=datetime.now(),
+            timestamp=datetime.now().astimezone(),
             data=data,
         )
 
@@ -120,7 +121,7 @@ async def log(
     event = LogEvent(
         service=service,
         level=severity,
-        timestamp=datetime.now(),
+        timestamp=datetime.now().astimezone(),
         data=data,
     )
 

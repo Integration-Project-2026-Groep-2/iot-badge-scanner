@@ -42,7 +42,8 @@ def send_checkin(badge_id: str) -> bool:
     """Send check-in request to API. Returns True if successful."""
     payload = {
         "id": badge_id,
-        "timestamp": datetime.now().isoformat(),
+        # Make timestamp timezone-aware so receivers expecting an offset can parse it
+        "timestamp": datetime.now().astimezone().isoformat(),
     }
     try:
         response = requests.post(API_URL, json=payload, timeout=API_TIMEOUT)

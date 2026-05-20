@@ -194,7 +194,11 @@ def build_checkin_xml(data: dict) -> bytes:
     id_el.text = str(data["id"])
 
     ts_el = etree.SubElement(root, "timestamp")
-    ts_el.text = data.get("timestamp") or datetime.now().isoformat()
+    # Ensure timestamps are timezone-aware so consumers expecting an offset can parse them
+    ts_el.text = (
+        data.get("timestamp")
+        or datetime.now().astimezone().isoformat()
+    )
 
     xml = etree.tostring(
         root,
@@ -259,7 +263,11 @@ def build_heartbeat_xml(data: dict) -> bytes:
     serv_id_el.text = str(data["serviceId"])
 
     ts_el = etree.SubElement(root, "timestamp")
-    ts_el.text = data.get("timestamp") or datetime.now().isoformat()
+    # Ensure timestamps include timezone offset
+    ts_el.text = (
+        data.get("timestamp")
+        or datetime.now().astimezone().isoformat()
+    )
 
     xml = etree.tostring(
         root,
