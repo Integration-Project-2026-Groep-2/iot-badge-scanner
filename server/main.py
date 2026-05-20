@@ -25,7 +25,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 
 # TODO(nasr): throw this in an iterable array or config block later
-CHECKIN_EXCHANGE = "users.checkin.topic"
+CHECKIN_EXCHANGE = "user.checkin.topic"
 CHECKIN_ROUTING_KEY = "routing.user.checkin"
 
 HEARTBEAT_EXCHANGE = "heartbeat.direct"
