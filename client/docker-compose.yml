@@ -29,7 +29,8 @@ services:
       - ./app:/app
     networks:
       - home-network
-       - "5000:5000"
+    ports:
+      - "5000:5000"
 
 networks:
   home-network:
