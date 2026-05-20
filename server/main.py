@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import logging
@@ -36,6 +37,12 @@ HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
 
 CHECKIN_XSD_SCHEMA = None
 HEARTBEAT_XSD_SCHEMA = None
+
+# TODO(nasr):
+PUBLISH_RETRIES = int(os.getenv("RABBITMQ_PUBLISH_RETRIES", "3"))
+PUBLISH_RETRY_DELAY_SECONDS = float(
+    os.getenv("RABBITMQ_PUBLISH_RETRY_DELAY_SECONDS", "0.5")
+)
 
 
 #########################################################################
@@ -101,6 +108,76 @@ def setup_rabbitmq():
         raise
 
 
+def _declare_required_exchanges(channel):
+    channel.exchange_declare(
+        exchange=CHECKIN_EXCHANGE,
+        exchange_type="topic",
+        durable=True,
+    )
+    channel.exchange_declare(
+        exchange=HEARTBEAT_EXCHANGE,
+        exchange_type="direct",
+        durable=True,
+    )
+
+
+def _publish_with_retry(exchange: str, routing_key: str, xml_bytes: bytes, kind: str):
+    last_error = None
+
+    for attempt in range(1, PUBLISH_RETRIES + 1):
+        connection = None
+        try:
+            connection = get_rabbitmq_connection()
+            channel = connection.channel()
+
+            # Re-declare exchanges in case broker was restarted or topology changed.
+            _declare_required_exchanges(channel)
+
+            channel.basic_publish(
+                exchange=exchange,
+                routing_key=routing_key,
+                body=xml_bytes,
+                properties=pika.BasicProperties(
+                    content_type="application/xml",
+                    delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
+                ),
+            )
+
+            logger.info("%s message published", kind)
+            return
+
+        except (pika.exceptions.AMQPError, OSError) as e:
+            last_error = e
+            if attempt >= PUBLISH_RETRIES:
+                break
+
+            delay = PUBLISH_RETRY_DELAY_SECONDS * attempt
+            logger.warning(
+                "%s publish attempt %d/%d failed: %s; retrying in %.2fs",
+                kind,
+                attempt,
+                PUBLISH_RETRIES,
+                e,
+                delay,
+            )
+            time.sleep(delay)
+
+        finally:
+            if connection:
+                try:
+                    connection.close()
+                except Exception as e:
+                    logger.warning("Error closing connection: %s", e)
+
+    logger.exception(
+        "Failed to publish %s after %d attempts: %s",
+        kind,
+        PUBLISH_RETRIES,
+        last_error,
+    )
+    raise last_error
+
+
 #########################################################################
 
 
@@ -156,38 +233,12 @@ def publish_checkin(xml_bytes: bytes):
         CHECKIN_ROUTING_KEY,
     )
 
-    connection = None
-    try:
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
-
-        channel.basic_publish(
-            exchange=CHECKIN_EXCHANGE,
-            routing_key=CHECKIN_ROUTING_KEY,
-            body=xml_bytes,
-            properties=pika.BasicProperties(
-                content_type='application/xml',
-                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
-            ),
-        )
-
-        logger.info("checkin message published")
-
-    except pika.exceptions.StreamLostError as e:
-        logger.error("RabbitMQ connection lost: %s", e)
-        raise
-    except pika.exceptions.ChannelClosedByBroker as e:
-        logger.error("RabbitMQ channel closed by broker: %s", e)
-        raise
-    except Exception as e:
-        logger.exception("Failed to publish checkin: %s", e)
-        raise
-    finally:
-        if connection:
-            try:
-                connection.close()
-            except Exception as e:
-                logger.warning("Error closing connection: %s", e)
+    _publish_with_retry(
+        exchange=CHECKIN_EXCHANGE,
+        routing_key=CHECKIN_ROUTING_KEY,
+        xml_bytes=xml_bytes,
+        kind="checkin",
+    )
 
 
 #####################################################
@@ -247,32 +298,12 @@ def publish_heartbeat(xml_bytes: bytes):
         HEARTBEAT_ROUTING_KEY,
     )
 
-    connection = None
-    try:
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
-
-        channel.basic_publish(
-            exchange=HEARTBEAT_EXCHANGE,
-            routing_key=HEARTBEAT_ROUTING_KEY,
-            body=xml_bytes,
-            properties=pika.BasicProperties(
-                content_type='application/xml',
-                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
-            ),
-        )
-
-        logger.info("heartbeat published")
-
-    except Exception as e:
-        logger.exception("Failed to publish heartbeat: %s", e)
-        raise
-    finally:
-        if connection:
-            try:
-                connection.close()
-            except Exception as e:
-                logger.warning("Error closing connection: %s", e)
+    _publish_with_retry(
+        exchange=HEARTBEAT_EXCHANGE,
+        routing_key=HEARTBEAT_ROUTING_KEY,
+        xml_bytes=xml_bytes,
+        kind="heartbeat",
+    )
 
 
 def send_heartbeat():
