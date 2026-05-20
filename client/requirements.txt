@@ -1,4 +1,3 @@
 opencv-python==4.8.1.78
 pika==1.3.2
 qrcode==7.4.2
-python-home-assistant==0.3.2
