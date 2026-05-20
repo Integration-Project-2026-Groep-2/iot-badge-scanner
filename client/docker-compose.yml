@@ -1,0 +1,36 @@
+services:
+  # Home Assistant service
+  home-assistant:
+    image: ghcr.io/home-assistant/home-assistant:latest
+    container_name: home-assistant
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./config:/config
+      - /run/dbus:/run/dbus:ro
+    ports:
+      - "8123:8123"
+    networks:
+      - home-network
+    depends_on:
+      - custom-app
+
+  custom-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: client
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./app:/app
+    networks:
+      - home-network
+       - "5000:5000"
+
+networks:
+  home-network:
+    driver: bridge
