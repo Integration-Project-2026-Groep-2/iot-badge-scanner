@@ -24,13 +24,18 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
+# note(nasr): i'm making this an environment flag because i don't see a reason to have
+# one a completely seperate logic system or seperate application
+KASSA_SIGN_IN_MODE=os.environ.get("KASSA_SIGN_IN_MODE", False)
+
+
+HEARTBEAT_EXCHANGE = "heartbeat.direct"
+HEARTBEAT_ROUTING_KEY = "routing.heartbeat"
 
 # TODO(nasr): throw this in an iterable array or config block later
 CHECKIN_EXCHANGE = "user.checkin.topic"
 CHECKIN_ROUTING_KEY = "routing.user.checkin"
 
-HEARTBEAT_EXCHANGE = "heartbeat.direct"
-HEARTBEAT_ROUTING_KEY = "routing.heartbeat"
 
 CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
 HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
@@ -43,7 +48,6 @@ PUBLISH_RETRIES = int(os.getenv("RABBITMQ_PUBLISH_RETRIES", "3"))
 PUBLISH_RETRY_DELAY_SECONDS = float(
     os.getenv("RABBITMQ_PUBLISH_RETRY_DELAY_SECONDS", "0.5")
 )
-
 
 #########################################################################
 # Helper functions
@@ -109,11 +113,20 @@ def setup_rabbitmq():
 
 
 def _declare_required_exchanges(channel):
-    channel.exchange_declare(
-        exchange=CHECKIN_EXCHANGE,
-        exchange_type="topic",
-        durable=True,
-    )
+    if KASSA_SIGN_IN_MODE != True:
+        channel.exchange_declare(
+            exchange=CHECKIN_EXCHANGE,
+            exchange_type="topic",
+            durable=True,
+        )
+    else:
+        channel.exchange_declare(
+            channel.exchange_declare(
+                exchange=KASSA_AUTHENTICATE_EXCHANGE,
+                echange_type="direct",
+                durable=true,
+            ))
+
     channel.exchange_declare(
         exchange=HEARTBEAT_EXCHANGE,
         exchange_type="direct",
@@ -244,6 +257,20 @@ def publish_checkin(xml_bytes: bytes):
         kind="checkin",
     )
 
+
+def publish_kassa_authenticate(xml_bytes: bytes):
+    logger.info(
+            "publishing kassa authentication message exchange=%s routing_key=%s",
+            KASSA_AUTHENTICATION_EXCHANGE,
+            KASSA_AUTHENTICATION_ROUTING_KEY,
+            )
+
+    _publish_with_retry(
+            exchange=KASSA_AUTHENTICATION_EXCHANGE,
+            routing_key=KASSA_AUTHENTICATION_ROUTING_KEY,
+            xml_bytes=xml_bytes,
+            kind="kassa authentication"
+            )
 
 #####################################################
 

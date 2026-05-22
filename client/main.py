@@ -37,6 +37,9 @@ BRIGHTNESS_HIGH = 180
 BRIGHTNESS_LOW = 70
 DEBUG = True
 
+# note(nasr): i'm making this an environment flag because i don't see a reason to have
+# one a completely seperate logic system or seperate application
+KASSA_SIGN_IN_MODE=os.environ.get("KASSA_SIGN_IN_MODE", false)
 
 def send_checkin(badge_id: str) -> bool:
     """Send check-in request to API. Returns True if successful."""
