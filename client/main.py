@@ -1,22 +1,24 @@
-import logging
 import os
 import sys
 import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import cv2
 import requests
 
 from dotenv import load_dotenv
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from shared.logger import get_logger
+
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 cap = None
 qcd = cv2.QRCodeDetector()
@@ -37,12 +39,21 @@ BRIGHTNESS_HIGH = 180
 BRIGHTNESS_LOW = 70
 DEBUG = True
 
-# note(nasr): i'm making this an environment flag because i don't see a reason to have
-# one a completely seperate logic system or seperate application
-KASSA_SIGN_IN_MODE=os.environ.get("KASSA_SIGN_IN_MODE", false)
+TAG="iot-badge-scanner"
+
+CRM_USER_CONFIRMED_EXCHANGE="contact.topic"
+CRM_USER_CONFIRMED_QUEUE="badgescanner.user.confirmed"
+CRM_USER_CONFIRMED_ROUTING_KEY="crm.user.confirmed"
+
+# callback function for the crm user consumer
+def consume_users_muuid() -> str:
+    pass
+
+
+
+
 
 def send_checkin(badge_id: str) -> bool:
-    """Send check-in request to API. Returns True if successful."""
     payload = {
         "id": badge_id,
         # Make timestamp timezone-aware so receivers expecting an offset can parse it

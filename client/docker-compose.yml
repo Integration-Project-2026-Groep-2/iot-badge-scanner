@@ -19,14 +19,14 @@ services:
 
   custom-app:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: client/Dockerfile
     container_name: client
     restart: unless-stopped
     environment:
       - TZ=Europe/Brussels
     volumes:
-      - ./app:/app
+      - ..:/app
     networks:
       - home-network
     ports:
