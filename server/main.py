@@ -5,6 +5,9 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from shared_logger import RabbitMQLogger, SeverityType, publish_log
+
+import sqlite3
 
 import pika
 from lxml import etree
@@ -16,6 +19,14 @@ if str(ROOT_DIR) not in sys.path:
 from shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+# tag consuming
+TAG="iot-badge-scanner"
+
+con = sqlite3.connect("users_muuid_table")
+cursor = con.cursor()
+
+cur.execute("CREATE TABLE users(muuid)")
 
 
 # Config
@@ -38,12 +49,15 @@ HEARTBEAT_ROUTING_KEY = "routing.heartbeat"
 CHECKIN_EXCHANGE = "user.checkin.topic"
 CHECKIN_ROUTING_KEY = "routing.user.checkin"
 
-
 CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
 HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
 
 CHECKIN_XSD_SCHEMA = None
 HEARTBEAT_XSD_SCHEMA = None
+
+CRM_USER_CONFIRMED_EXCHANGE="contact.topic"
+CRM_USER_CONFIRMED_QUEUE="badgescanner.user.confirmed"
+CRM_USER_CONFIRMED_ROUTING_KEY="crm.user.confirmed"
 
 # TODO(nasr):
 PUBLISH_RETRIES = int(os.getenv("RABBITMQ_PUBLISH_RETRIES", "3"))
@@ -54,6 +68,47 @@ PUBLISH_RETRY_DELAY_SECONDS = float(
 #########################################################################
 # Helper functions
 # XSD loading
+
+# callback function for the crm user consumer
+def handle_user(muuid) -> None:
+
+    if properties.content_type != "application/xml":
+        printf("error handling application xml")
+        return
+
+    try:
+        root = ET.fromstring(body)
+
+    connection_parameters = pika.ConnectionParameters(host=TAG)
+
+    channel = connection.channel()
+
+    connection = pika.BlockingConnection(connection_parameter)
+    logger = RabbitMQLogger(service_name=tag, channel=channel)
+
+    cur.execute(f"SELECT * from users where users = {muuid}")
+    user = cur.fetchone()
+    if user is not None:
+        logger.info(f"[info] user: {muuid} already exists")
+        return
+    else:
+        cur.execute(f"INSERT INTO users VALUES
+                ('{muuid}')")
+    con.commit()
+
+async def consume_user() -> str:
+    connection = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+    channel.basic_publish(queue=CRM_USER_CONFIRMED_QUEUE, routing_key=CRM_USER_CONFIRMED_ROUTING_KEY)
+
+    queue_name = "xml_orders"
+    channel.queue_declare(queue=queue_name, durable=true)
+
+    channel.basic_qos(prefetch_count=1)
+    channel.basic_consume(queue=queue_name, on_message_callback=on_message_received)
+
+    try:
+        channel.start_consuming()
+        connection.close()
 
 
 def load_xsd_schema(path: str) -> etree.XMLSchema:
@@ -76,7 +131,7 @@ def get_rabbitmq_connection():
         pika.ConnectionParameters(
             host=RABBITMQ_HOST,
             credentials=credentials,
-            heartbeat=600,  # 10 minute heartbeat
+            heartbeat=600,  # 10 minute heartbeat, I don't know this was a bug at one point so I dont know
             blocked_connection_timeout=300,
             connection_attempts=3,
             retry_delay=2,
@@ -453,3 +508,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+    cur.close()

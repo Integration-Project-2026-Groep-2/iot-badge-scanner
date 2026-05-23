@@ -39,19 +39,6 @@ BRIGHTNESS_HIGH = 180
 BRIGHTNESS_LOW = 70
 DEBUG = True
 
-TAG="iot-badge-scanner"
-
-CRM_USER_CONFIRMED_EXCHANGE="contact.topic"
-CRM_USER_CONFIRMED_QUEUE="badgescanner.user.confirmed"
-CRM_USER_CONFIRMED_ROUTING_KEY="crm.user.confirmed"
-
-# callback function for the crm user consumer
-def consume_users_muuid() -> str:
-    pass
-
-
-
-
 
 def send_checkin(badge_id: str) -> bool:
     payload = {
