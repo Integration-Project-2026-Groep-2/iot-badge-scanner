@@ -31,7 +31,7 @@ jobs:
 
       - name: Build image
         run: |
-          docker build -t ${{ env.IMAGE }}:${{ steps.image_meta.outputs.image_tag }} ./server/
+          docker build -t ${{ env.IMAGE }}:${{ steps.image_meta.outputs.image_tag }} -f ./server/Dockerfile .
           docker tag ${{ env.IMAGE }}:${{ steps.image_meta.outputs.image_tag }} ${{ env.IMAGE }}:latest-dev
 
       - name: Push tags
