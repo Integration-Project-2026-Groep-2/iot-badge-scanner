@@ -148,7 +148,7 @@ def consume_crm_users():
 
     def on_message(ch, method, props, body):
         try:
-            muuid = etree.fromstring(body).findtext("muuid")
+            muuid = etree.fromstring(body).findtext("id")
             if not muuid:
                 raise ValueError("missing muuid")
             add_user(muuid)
