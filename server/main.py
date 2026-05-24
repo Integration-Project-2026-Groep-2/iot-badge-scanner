@@ -10,7 +10,7 @@ from threading import Thread
 
 import pika
 from lxml import etree
-from pika.exceptions import AMQPConnectionError, AMQPError
+from pika.exceptions import AMQPError
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
