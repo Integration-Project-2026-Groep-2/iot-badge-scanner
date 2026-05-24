@@ -1,9 +1,12 @@
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
 
-    <xs:complexType name="Heartbeat">
-        <xs:sequence>
-            <xs:element name="serviceId" type="xs:string"/>
-            <xs:element name="timestamp" type="xs:dateTime"/>
-        </xs:sequence>
-    </xs:complexType>
+    <xs:element name="Heartbeat">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="serviceId" type="xs:string"/>
+                <xs:element name="timestamp" type="xs:dateTime"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
 </xs:schema>
