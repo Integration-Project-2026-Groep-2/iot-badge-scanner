@@ -34,6 +34,14 @@ services:
     ports:
       - "5000:5000"
 
+  # host the camera stuff on this port. so we could have a home assistant on a differnet device and still have it work
+   go2rtc:
+    image: alexxit/go2rtc
+    devices:
+      - /dev/video0:/dev/video0
+    ports:
+      - "8554:8554"
+
 networks:
   home-network:
     driver: bridge
