@@ -12,13 +12,14 @@ def schemas():
 
 def test_xml_generation():
     muuid = "test-uuid-456"
-    checkin_xml = main.build_checkin_xml(muuid)
+    checkin_xml = main.build_checkin_xml(muuid, True)
 
     # Parse and check tag and content
     root = etree.fromstring(checkin_xml)
     assert root.tag == "CheckIn"
     assert root.findtext("id") == muuid
     assert root.findtext("timestamp") is not None
+    assert root.findtext("allowed") == "true"
 
     heartbeat_xml = main.build_heartbeat_xml()
     root_hb = etree.fromstring(heartbeat_xml)
@@ -31,7 +32,7 @@ def test_xml_validation(schemas):
     checkin_schema, heartbeat_schema = schemas
 
     # Valid checkin
-    valid_checkin = main.build_checkin_xml("uuid-1")
+    valid_checkin = main.build_checkin_xml("uuid-1", True)
     assert main._validate(checkin_schema, valid_checkin) is True
 
     # Invalid checkin (missing timestamp / incorrect elements)

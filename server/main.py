@@ -64,38 +64,60 @@ def add_user(muuid: str):
     except sqlite3.IntegrityError:
         pass  # already exists
 
-def _connect() -> pika.BlockingConnection:
-    return pika.BlockingConnection(pika.ConnectionParameters(
-        host=RABBITMQ_HOST,
-        credentials=pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS),
-        heartbeat=600,
-        blocked_connection_timeout=300,
-        connection_attempts=3,
-        retry_delay=2,
-        ))
+class RabbitPublisher:
+    """Maintain a persistent connection/channel and publish with retries.
 
-def _publish(exchange: str, routing_key: str, body: bytes):
-    """Publish with linear backoff retry."""
-    for attempt in range(1, PUBLISH_RETRIES + 1):
-        try:
-            con = _connect()
-            ch  = con.channel()
-            ch.basic_publish(
+    This avoids opening a new connection for every publish and centralizes
+    reconnect logic.
+    """
+
+    def __init__(self):
+        self._con = None
+        self._ch = None
+
+    def _ensure(self):
+        if self._con and self._con.is_open:
+            return
+        self._con = pika.BlockingConnection(pika.ConnectionParameters(
+            host=RABBITMQ_HOST,
+            credentials=pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS),
+            heartbeat=600,
+            blocked_connection_timeout=300,
+            connection_attempts=3,
+            retry_delay=2,
+        ))
+        self._ch = self._con.channel()
+
+    def publish(self, exchange: str, routing_key: str, body: bytes):
+        for attempt in range(1, PUBLISH_RETRIES + 1):
+            try:
+                self._ensure()
+                self._ch.basic_publish(
                     exchange=exchange,
                     routing_key=routing_key,
                     body=body,
                     properties=pika.BasicProperties(
                         content_type="application/xml",
                         delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
-                        ),
-                    )
-            con.close()
-            return
-        except (AMQPError, OSError) as e:
-            if attempt == PUBLISH_RETRIES:
-                raise
-            logger.warning("publish attempt %d/%d failed: %s", attempt, PUBLISH_RETRIES, e)
-            time.sleep(PUBLISH_RETRY_DELAY * attempt)
+                    ),
+                )
+                return
+            except (AMQPError, OSError) as e:
+                # Close connection and retry with backoff
+                try:
+                    if self._con:
+                        self._con.close()
+                except Exception:
+                    pass
+                self._con = None
+                self._ch = None
+                if attempt == PUBLISH_RETRIES:
+                    raise
+                logger.warning("publish attempt %d/%d failed: %s", attempt, PUBLISH_RETRIES, e)
+                time.sleep(PUBLISH_RETRY_DELAY * attempt)
+
+# shared publisher instance (initialized in main)
+publisher: RabbitPublisher = None
 
 def _now_iso() -> str:
     return datetime.now().astimezone().isoformat()
@@ -109,10 +131,13 @@ def _validate(schema: etree.XMLSchema, xml_bytes: bytes) -> bool:
     except etree.XMLSyntaxError:
         return False
 
-def build_checkin_xml(muuid: str) -> bytes:
+def build_checkin_xml(muuid: str, allowed: bool, reason: str = None) -> bytes:
     root = etree.Element("CheckIn")
-    etree.SubElement(root, "id").text       = muuid
+    etree.SubElement(root, "id").text = muuid
     etree.SubElement(root, "timestamp").text = _now_iso()
+    etree.SubElement(root, "allowed").text = "true" if allowed else "false"
+    if reason:
+        etree.SubElement(root, "reason").text = reason
     return _to_xml(root)
 
 def build_heartbeat_xml() -> bytes:
@@ -127,7 +152,7 @@ def send_heartbeat():
         logger.error("heartbeat XML invalid — skipping publish")
         return
     try:
-        _publish(HEARTBEAT_EXCHANGE, HEARTBEAT_ROUTING, xml)
+        publisher.publish(HEARTBEAT_EXCHANGE, HEARTBEAT_ROUTING, xml)
         logger.info("heartbeat sent")
     except Exception as e:
         logger.error("heartbeat publish failed: %s", e)
@@ -175,17 +200,24 @@ class Handler(BaseHTTPRequestHandler):
                 logger.warning("check-in denied: missing id")
                 return self._respond(400, b"missing id")
 
-            if not user_db_has(muuid):
-                logger.warning("check-in denied: unknown muuid=%s", muuid)
-                return self._respond(403, b"unknown muuid")
+            allowed = user_db_has(muuid)
+            reason = None
+            status_code = 200 if allowed else 403
+            if not allowed:
+                reason = "unknown muuid"
+                logger.warning("check-in denied: %s", reason)
 
-            xml = build_checkin_xml(muuid)
+            xml = build_checkin_xml(muuid, allowed, reason)
             if not _validate(CHECKIN_XSD, xml):
                 logger.error("check-in rejected: XML validation failed for muuid=%s", muuid)
                 return self._respond(400, b"XML validation failed")
 
-            _publish(CHECKIN_EXCHANGE, CHECKIN_ROUTING, xml)
-            self._respond(200, b"OK")
+            try:
+                publisher.publish(CHECKIN_EXCHANGE, CHECKIN_ROUTING, xml)
+            except Exception as e:
+                logger.error("check-in publish failed: %s", e)
+
+            self._respond(status_code, b"OK" if allowed else b"denied")
 
         except json.JSONDecodeError:
             self._respond(400, b"invalid JSON")
@@ -205,21 +237,32 @@ class Handler(BaseHTTPRequestHandler):
 def user_db_has(muuid: str) -> bool:
     return user_exists(muuid)
 
+
+def _connect() -> pika.BlockingConnection:
+    return pika.BlockingConnection(pika.ConnectionParameters(
+        host=RABBITMQ_HOST,
+        credentials=pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS),
+        heartbeat=600,
+        blocked_connection_timeout=300,
+        connection_attempts=3,
+        retry_delay=2,
+    ))
+
 def main() -> int:
     global CHECKIN_XSD, HEARTBEAT_XSD
+    global publisher
 
     logger.info("starting %s", SERVICE_TAG)
 
     CHECKIN_XSD   = etree.XMLSchema(etree.parse(CHECKIN_XSD_PATH))
     HEARTBEAT_XSD = etree.XMLSchema(etree.parse(HEARTBEAT_XSD_PATH))
 
-    # Declare exchanges once at startup
-    con = _connect()
-    ch  = con.channel()
-    ch.exchange_declare(exchange=CHECKIN_EXCHANGE,   exchange_type="topic",  durable=True)
-    ch.exchange_declare(exchange=HEARTBEAT_EXCHANGE, exchange_type="direct", durable=True)
-    ch.exchange_declare(exchange=CRM_EXCHANGE,       exchange_type="topic",  durable=True)
-    con.close()
+    # Initialize persistent publisher and declare exchanges once at startup
+    publisher = RabbitPublisher()
+    publisher._ensure()
+    publisher._ch.exchange_declare(exchange=CHECKIN_EXCHANGE,   exchange_type="topic",  durable=True)
+    publisher._ch.exchange_declare(exchange=HEARTBEAT_EXCHANGE, exchange_type="direct", durable=True)
+    publisher._ch.exchange_declare(exchange=CRM_EXCHANGE,       exchange_type="topic",  durable=True)
 
     for target, name in [
             (consume_crm_users, "crm-consumer"),

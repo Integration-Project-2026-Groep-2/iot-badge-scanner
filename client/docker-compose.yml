@@ -8,7 +8,7 @@ services:
     environment:
       - TZ=Europe/Brussels
     volumes:
-      - ./config:/config
+      - ./config:/config:Z
       - /run/dbus:/run/dbus:ro
     ports:
       - "8123:8123"
@@ -26,27 +26,13 @@ services:
     environment:
       - TZ=Europe/Brussels
     volumes:
-      - ..:/app
+      - ..:/app:Z
     devices:
       - /dev/video0:/dev/video0
     networks:
       - home-network
     ports:
-      - "5000:5000"
-    depends_on:
-      - go2rtc
-
-  go2rtc:
-    image: alexxit/go2rtc
-    container_name: go2rtc
-    restart: unless-stopped
-    devices:
-      - /dev/video0:/dev/video0
-    ports:
-      - "8554:8554"
-      - "1984:1984"
-    networks:
-      - home-network
+      - "8080:8080"
 
 networks:
   home-network:

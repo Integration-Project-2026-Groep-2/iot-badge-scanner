@@ -7,6 +7,8 @@
             <xs:sequence>
                 <xs:element name="id" type="xs:string"/>
                 <xs:element name="timestamp" type="xs:dateTime"/>
+                <xs:element name="allowed" type="xs:boolean"/>
+                <xs:element name="reason" type="xs:string" minOccurs="0"/>
             </xs:sequence>
         </xs:complexType>
     </xs:element>

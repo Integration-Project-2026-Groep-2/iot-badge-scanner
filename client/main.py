@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import threading
@@ -9,6 +10,7 @@ import cv2
 import requests
 
 from dotenv import load_dotenv
+from typing import Tuple
 import time
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -27,12 +29,15 @@ latest_frame = None
 frame_lock = threading.Lock()
 running = True
 frame_count = 0
+consecutive_camera_failures = 0
 
 HA_HOST = os.environ.get("HA_HOST", "0.0.0.0")
 HA_PORT = int(os.environ.get("HA_PORT", "8080"))
 API_URL = os.environ.get("API_URL", "http://localhost:3000/checkin")
+CAMERA_DEVICE = os.environ.get("CAMERA_DEVICE", "/dev/video0")
+CAMERA_BACKEND = os.environ.get("CAMERA_BACKEND", "v4l2").lower()
 
-API_TIMEOUT = 5.0
+API_TIMEOUT = 1.0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 360
 CAMERA_FPS = 5
@@ -41,7 +46,25 @@ BRIGHTNESS_LOW = 70
 DEBUG = True
 
 
-def send_checkin(badge_id: str) -> bool:
+def open_camera():
+    """Open the camera with the configured backend."""
+    backend_map = {
+        "v4l2": cv2.CAP_V4L2,
+    }
+    backend = backend_map.get(CAMERA_BACKEND)
+
+    if backend is None:
+        return cv2.VideoCapture(CAMERA_DEVICE)
+
+    return cv2.VideoCapture(CAMERA_DEVICE, backend)
+
+
+def send_checkin(badge_id: str) -> Tuple[bool, str]:
+    """Send a check-in and return (allowed, reason).
+
+    The server may return a 200 OK with a short message, or a non-200
+    status with a plaintext reason (e.g. "unknown muuid").
+    """
     payload = {
         "id": badge_id,
         # Make timestamp timezone-aware so receivers expecting an offset can parse it
@@ -49,29 +72,32 @@ def send_checkin(badge_id: str) -> bool:
     }
     try:
         response = requests.post(API_URL, json=payload, timeout=API_TIMEOUT)
+        text = (response.text or "").strip()
         if response.status_code == 200:
-            logger.info(f"Check-in successful: {badge_id}")
-            return True
+            logger.info(f"Check-in successful: {badge_id} ({text})")
+            return True, text or "OK"
         else:
-            logger.warning(
-                f"Check-in failed for {badge_id}: HTTP {response.status_code}"
-            )
-            return False
+            reason = text or f"HTTP {response.status_code}"
+            logger.warning(f"Check-in denied for {badge_id}: {reason}")
+            return False, reason
     except requests.Timeout:
-        logger.error(f"Check-in error for {badge_id}: timeout after {API_TIMEOUT}s")
-        return False
+        reason = f"timeout after {API_TIMEOUT}s"
+        logger.error(f"Check-in error for {badge_id}: {reason}")
+        return False, reason
     except requests.RequestException as e:
-        logger.error(f"Check-in error for {badge_id}: {e}")
-        return False
+        reason = str(e)
+        logger.error(f"Check-in error for {badge_id}: {reason}")
+        return False, reason
 
 
 def handle_qr_scan(qr_data: str):
-    """Process detected QR code."""
+    """Process detected QR code and log whether access was granted."""
     logger.info(f"QR code detected: {qr_data}")
-    if send_checkin(qr_data):
-        logger.info("[ACCESS_GRANTED]")
+    allowed, reason = send_checkin(qr_data)
+    if allowed:
+        logger.info(f"[ACCESS_GRANTED] {qr_data}: {reason}")
     else:
-        logger.warning("[ACCESS_DENIED]")
+        logger.warning(f"[ACCESS_DENIED] {qr_data}: {reason}")
 
 
 class StreamHandler(BaseHTTPRequestHandler):
@@ -79,6 +105,16 @@ class StreamHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests."""
+        if self.path == "/health":
+            payload = json.dumps(get_health_status()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
         if self.path != "/stream.mjpg":
             self.send_response(404)
             self.end_headers()
@@ -117,22 +153,47 @@ class StreamHandler(BaseHTTPRequestHandler):
 def start_http_server():
     """Start MJPEG stream server in background thread."""
     server = HTTPServer((HA_HOST, HA_PORT), StreamHandler)
-    logger.info(f"Stream server started on http://{HA_HOST}:{HA_PORT}/stream.mjpg")
+    logger.info(
+        f"Stream server started on http://{HA_HOST}:{HA_PORT}/stream.mjpg and /health"
+    )
     server.serve_forever()
+
+
+def get_health_status():
+    """Return camera and stream health for Home Assistant."""
+    with frame_lock:
+        frame_available = latest_frame is not None
+
+    camera_open = cap is not None and cap.isOpened()
+    if camera_open and frame_available:
+        status = "ok"
+    elif camera_open:
+        status = "warming_up"
+    else:
+        status = "down"
+
+    return {
+        "status": status,
+        "camera_open": camera_open,
+        "latest_frame_available": frame_available,
+        "consecutive_failures": consecutive_camera_failures,
+        "frame_count": frame_count,
+        "camera_device": CAMERA_DEVICE,
+    }
 
 
 def init_camera():
     """Initialize camera with proper settings."""
     global cap
 
-    cap = cv2.VideoCapture(0)
+    cap = open_camera()
     if not cap.isOpened():
-        logger.error("Failed to open camera device /dev/video0")
+        logger.error(f"Failed to open camera device {CAMERA_DEVICE}")
         sys.exit(1)
 
     # NOTE(nasr): Extra release step to reset camera settings
     cap.release()
-    cap = cv2.VideoCapture(0)
+    cap = open_camera()
 
     if not cap.isOpened():
         logger.error("Failed to reopen camera after reset")
@@ -210,15 +271,36 @@ def detect_qr_codes(frame):
 
 
 def camera_loop():
-    global latest_frame, frame_count, running
+    global latest_frame, frame_count, running, consecutive_camera_failures
 
     logger.info("Starting camera loop")
     try:
         while running:
+            if cap is None or not cap.isOpened():
+                logger.warning("Camera handle is closed; attempting to reopen")
+                init_camera()
+                consecutive_camera_failures = 0
+                continue
+
             ret, frame = cap.read()
             if not ret:
-                logger.warning("Failed to read frame from camera")
+                consecutive_camera_failures += 1
+                if consecutive_camera_failures == 1 or consecutive_camera_failures % 10 == 0:
+                    logger.warning(
+                        f"Failed to read frame from camera {CAMERA_DEVICE} "
+                        f"({consecutive_camera_failures} consecutive failures); reopening"
+                    )
+
+                if consecutive_camera_failures >= 3:
+                    cap.release()
+                    time.sleep(1)
+                    init_camera()
+                    consecutive_camera_failures = 0
+                else:
+                    time.sleep(0.2)
                 continue
+
+            consecutive_camera_failures = 0
 
             frame = adjust_brightness(frame)
 
@@ -229,8 +311,6 @@ def camera_loop():
                     logger.debug(f"QR codes detected: {len(qr_data_list)}")
                 for qr_data in qr_data_list:
                     handle_qr_scan(qr_data)
-                time.sleep(3)
-
 
             with frame_lock:
                 latest_frame = annotated_frame.copy()
