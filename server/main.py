@@ -172,13 +172,16 @@ class Handler(BaseHTTPRequestHandler):
             data  = json.loads(self.rfile.read(length))
             muuid = data.get("id")
             if not muuid:
+                logger.warning("check-in denied: missing id")
                 return self._respond(400, b"missing id")
 
             if not user_db_has(muuid):
+                logger.warning("check-in denied: unknown muuid=%s", muuid)
                 return self._respond(403, b"unknown muuid")
 
             xml = build_checkin_xml(muuid)
             if not _validate(CHECKIN_XSD, xml):
+                logger.error("check-in rejected: XML validation failed for muuid=%s", muuid)
                 return self._respond(400, b"XML validation failed")
 
             _publish(CHECKIN_EXCHANGE, CHECKIN_ROUTING, xml)
