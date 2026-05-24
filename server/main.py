@@ -49,8 +49,7 @@ CRM_USER_CONFIRMED_EXCHANGE = "contact.topic"
 CRM_USER_CONFIRMED_QUEUE = "badgescanner.user.confirmed"
 CRM_USER_CONFIRMED_ROUTING_KEY = "crm.user.confirmed"
 
-KASSA_AUTHENTICATE_EXCHANGE = "kassa.direct"
-KASSA_AUTHENTICATE_ROUTING_KEY = "routing.kassa.authenticate"
+KASSA_ROUTING_KEY = "routing.kassa.authenticate"
 
 # XSD Schema Paths
 CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
@@ -183,17 +182,6 @@ def setup_rabbitmq():
             durable=True,
         )
 
-        # Declare kassa exchange if in kassa mode
-        if KASSA_SIGN_IN_MODE:
-            logger.info(
-                "Declaring exchange: %s (KASSA mode)", KASSA_AUTHENTICATE_EXCHANGE
-            )
-            channel.exchange_declare(
-                exchange=KASSA_AUTHENTICATE_EXCHANGE,
-                exchange_type="direct",
-                durable=True,
-            )
-
         logger.info("RabbitMQ setup complete")
 
     except AMQPConnectionError as e:
@@ -219,13 +207,6 @@ def _declare_required_exchanges(
         exchange_type="topic",
         durable=True,
     )
-
-    if KASSA_SIGN_IN_MODE:
-        channel.exchange_declare(
-            exchange=KASSA_AUTHENTICATE_EXCHANGE,
-            exchange_type="direct",
-            durable=True,
-        )
 
     channel.exchange_declare(
         exchange=HEARTBEAT_EXCHANGE,
@@ -398,13 +379,13 @@ def publish_kassa_authenticate(xml_bytes: bytes):
     """Publish a Kassa authentication message to RabbitMQ."""
     logger.info(
         "Publishing Kassa authentication message exchange=%s routing_key=%s",
-        KASSA_AUTHENTICATE_EXCHANGE,
-        KASSA_AUTHENTICATE_ROUTING_KEY,
+        CHECKIN_EXCHANGE,
+        KASSA_ROUTING_KEY,
     )
 
     _publish_with_retry(
-        exchange=KASSA_AUTHENTICATE_EXCHANGE,
-        routing_key=KASSA_AUTHENTICATE_ROUTING_KEY,
+        exchange=CHECKIN_EXCHANGE,
+        routing_key=KASSA_ROUTING_KEY,
         xml_bytes=xml_bytes,
         kind="kassa-authenticate",
     )
