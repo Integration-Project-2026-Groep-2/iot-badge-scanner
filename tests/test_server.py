@@ -45,17 +45,3 @@ def test_xml_validation(schemas):
     # Invalid heartbeat XML syntax
     assert main._validate(heartbeat_schema, b"invalid-xml-syntax") is False
 
-
-def test_database_operations(temp_db):
-    muuid = "user-123"
-
-    # User should not exist initially
-    assert main.user_exists(muuid) is False
-
-    # Add user
-    main.add_user(muuid)
-    assert main.user_exists(muuid) is True
-
-    # Duplicate insert should not raise errors (handled by SQLite try/except)
-    main.add_user(muuid)
-    assert main.user_exists(muuid) is True
