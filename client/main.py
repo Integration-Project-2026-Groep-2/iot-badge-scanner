@@ -9,6 +9,7 @@ import cv2
 import requests
 
 from dotenv import load_dotenv
+import time
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -228,6 +229,8 @@ def camera_loop():
                     logger.debug(f"QR codes detected: {len(qr_data_list)}")
                 for qr_data in qr_data_list:
                     handle_qr_scan(qr_data)
+                time.sleep(3)
+
 
             with frame_lock:
                 latest_frame = annotated_frame.copy()
