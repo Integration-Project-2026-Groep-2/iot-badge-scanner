@@ -146,17 +146,17 @@ def consume_crm_users():
     ch.queue_bind(exchange=CRM_EXCHANGE, queue=CRM_QUEUE, routing_key=CRM_ROUTING)
     ch.basic_qos(prefetch_count=1)
 
-def on_message(ch, method, props, body):
-    try:
-        muuid = etree.fromstring(body).findtext("muuid")
-        if not muuid:
-            raise ValueError("missing muuid")
-        add_user(muuid)
-        logger.info("stored muuid=%s", muuid)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except Exception as e:
-        logger.error("crm message error: %s", e)
-        ch.basic_nack(delivery_tag=method.delivery_tag)
+    def on_message(ch, method, props, body):
+        try:
+            muuid = etree.fromstring(body).findtext("muuid")
+            if not muuid:
+                raise ValueError("missing muuid")
+            add_user(muuid)
+            logger.info("stored muuid=%s", muuid)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            logger.error("crm message error: %s", e)
+            ch.basic_nack(delivery_tag=method.delivery_tag)
 
     ch.basic_consume(queue=CRM_QUEUE, on_message_callback=on_message)
     logger.info("crm consumer ready")
