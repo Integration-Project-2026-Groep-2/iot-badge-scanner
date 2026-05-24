@@ -72,7 +72,7 @@ def _connect() -> pika.BlockingConnection:
         blocked_connection_timeout=300,
         connection_attempts=3,
         retry_delay=2,
-    ))
+        ))
 
 def _publish(exchange: str, routing_key: str, body: bytes):
     """Publish with linear backoff retry."""
@@ -81,14 +81,14 @@ def _publish(exchange: str, routing_key: str, body: bytes):
             con = _connect()
             ch  = con.channel()
             ch.basic_publish(
-                exchange=exchange,
-                routing_key=routing_key,
-                body=body,
-                properties=pika.BasicProperties(
-                    content_type="application/xml",
-                    delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
-                ),
-            )
+                    exchange=exchange,
+                    routing_key=routing_key,
+                    body=body,
+                    properties=pika.BasicProperties(
+                        content_type="application/xml",
+                        delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE,
+                        ),
+                    )
             con.close()
             return
         except (AMQPError, OSError) as e:
@@ -146,21 +146,17 @@ def consume_crm_users():
     ch.queue_bind(exchange=CRM_EXCHANGE, queue=CRM_QUEUE, routing_key=CRM_ROUTING)
     ch.basic_qos(prefetch_count=1)
 
-    def on_message(ch, method, props, body):
-        if props.content_type != "application/xml":
-            logger.error("unexpected content-type: %s", props.content_type)
-            ch.basic_nack(delivery_tag=method.delivery_tag)
-            return
-        try:
-            muuid = etree.fromstring(body).findtext("muuid")
-            if not muuid:
-                raise ValueError("missing muuid")
-            add_user(muuid)
-            logger.info("stored muuid=%s", muuid)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-        except Exception as e:
-            logger.error("crm message error: %s", e)
-            ch.basic_nack(delivery_tag=method.delivery_tag)
+def on_message(ch, method, props, body):
+    try:
+        muuid = etree.fromstring(body).findtext("muuid")
+        if not muuid:
+            raise ValueError("missing muuid")
+        add_user(muuid)
+        logger.info("stored muuid=%s", muuid)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as e:
+        logger.error("crm message error: %s", e)
+        ch.basic_nack(delivery_tag=method.delivery_tag)
 
     ch.basic_consume(queue=CRM_QUEUE, on_message_callback=on_message)
     logger.info("crm consumer ready")
@@ -223,9 +219,9 @@ def main() -> int:
     con.close()
 
     for target, name in [
-        (consume_crm_users, "crm-consumer"),
-        (heartbeat_loop,    "heartbeat"),
-    ]:
+            (consume_crm_users, "crm-consumer"),
+            (heartbeat_loop,    "heartbeat"),
+            ]:
         Thread(target=target, name=name, daemon=True).start()
         logger.info("%s thread started", name)
 
