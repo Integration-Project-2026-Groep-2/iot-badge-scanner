@@ -35,7 +35,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 # Feature Flags
 # KASSA_SIGN_IN_MODE = os.getenv("KASSA_SIGN_IN_MODE", "false").lower() == "true"
-KASSA_SIGN_IN_MODE = False
+KASSA_SIGN_IN_MODE = True
 
 # RabbitMQ Exchange & Routing Configuration
 HEARTBEAT_EXCHANGE = "heartbeat.direct"
