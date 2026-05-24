@@ -27,20 +27,24 @@ services:
       - TZ=Europe/Brussels
     volumes:
       - ..:/app
-    devices:
-      - /dev/video0:/dev/video0
     networks:
       - home-network
     ports:
       - "5000:5000"
+    depends_on:
+      - go2rtc
 
-  # host the camera stuff on this port. so we could have a home assistant on a differnet device and still have it work
-   go2rtc:
+  go2rtc:
     image: alexxit/go2rtc
+    container_name: go2rtc
+    restart: unless-stopped
     devices:
       - /dev/video0:/dev/video0
     ports:
       - "8554:8554"
+      - "1984:1984"
+    networks:
+      - home-network
 
 networks:
   home-network:
