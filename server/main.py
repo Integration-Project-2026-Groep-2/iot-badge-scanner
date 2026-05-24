@@ -33,9 +33,6 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
-# Feature Flags
-# KASSA_SIGN_IN_MODE = os.getenv("KASSA_SIGN_IN_MODE", "false").lower() == "true"
-KASSA_SIGN_IN_MODE = True
 
 # RabbitMQ Exchange & Routing Configuration
 HEARTBEAT_EXCHANGE = "heartbeat.direct"
@@ -43,13 +40,11 @@ HEARTBEAT_ROUTING_KEY = "routing.heartbeat"
 
 CHECKIN_EXCHANGE = "user.checkin.topic"
 CHECKIN_CONTROLROOM_ROUTING_KEY = "routing.controlroom.user.checkin"
-CHECKIN_KASSA_ROUTING_KEY = "routing.user.checkin"
 
 CRM_USER_CONFIRMED_EXCHANGE = "contact.topic"
 CRM_USER_CONFIRMED_QUEUE = "badgescanner.user.confirmed"
 CRM_USER_CONFIRMED_ROUTING_KEY = "crm.user.confirmed"
 
-KASSA_ROUTING_KEY = "routing.kassa.authenticate"
 
 # XSD Schema Paths
 CHECKIN_XSD_PATH = "./xsd/checkin.xsd"
@@ -354,12 +349,6 @@ def validate_checkin_xml(xml_bytes: bytes) -> bool:
 
 
 def publish_checkin(xml_bytes: bytes):
-    """Publish a check-in message to RabbitMQ."""
-    routing_key = (
-        CHECKIN_KASSA_ROUTING_KEY
-        if KASSA_SIGN_IN_MODE
-        else CHECKIN_CONTROLROOM_ROUTING_KEY
-    )
 
     logger.info(
         "Publishing check-in message exchange=%s routing_key=%s",
@@ -375,23 +364,6 @@ def publish_checkin(xml_bytes: bytes):
     )
 
 
-def publish_kassa_authenticate(xml_bytes: bytes):
-    """Publish a Kassa authentication message to RabbitMQ."""
-    logger.info(
-        "Publishing Kassa authentication message exchange=%s routing_key=%s",
-        CHECKIN_EXCHANGE,
-        KASSA_ROUTING_KEY,
-    )
-
-    _publish_with_retry(
-        exchange=CHECKIN_EXCHANGE,
-        routing_key=KASSA_ROUTING_KEY,
-        xml_bytes=xml_bytes,
-        kind="kassa-authenticate",
-    )
-
-
-# Heartbeat XML Building, Validation, and Publishing
 
 
 def build_heartbeat_xml(data: dict) -> bytes:
