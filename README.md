@@ -63,7 +63,7 @@ sequenceDiagram
 
     %% ── Heartbeat flow ─────────────────────────────────────────
     rect rgb(70, 40, 30)
-        note over Server,MQ: Heartbeat Flow (every 30 s)
+        note over Server,MQ: Heartbeat Flow (every second)
         loop every HEARTBEAT_INTERVAL seconds
             Server->>Server: build & validate Heartbeat XML (XSD)
             Server->>MQ: publish → heartbeat.direct<br/>routing.heartbeat
@@ -107,7 +107,7 @@ iot-badge-scanner/
 
 ### Client
 
-> **Location:** `client/`  
+> **Location:** `client/`
 > **Runtime:** Python 3.13 · OpenCV · Requests
 
 The client runs on an edge device (e.g. Raspberry Pi) connected to a USB or CSI camera.
@@ -118,8 +118,9 @@ The client runs on an edge device (e.g. Raspberry Pi) connected to a USB or CSI 
 | **Brightness normalisation** | Adaptive scaling to handle over- and under-exposed frames |
 | **Check-in forwarding** | HTTP POST to the server's `/checkin` endpoint |
 | **MJPEG stream** | Live annotated video at `http://<host>:<port>/stream.mjpg` |
-| **Home Assistant** | Integrated via the compose stack for a local dashboard |
-| **go2rtc** | RTSP re-streaming sidecar for low-latency access |
+| **Home Assistant** | Dashboard for camera output and scanner health |
+
+Home Assistant only consumes the scanner's HTTP stream and health endpoint. OpenCV remains the sole component reading `/dev/video0` and performing QR scanning.
 
 After a successful QR scan, the client enforces a **3-second cooldown** before the next scan to prevent duplicate events.
 
@@ -129,13 +130,17 @@ After a successful QR scan, the client enforces a **3-second cooldown** before t
 HA_HOST=0.0.0.0
 HA_PORT=8080
 API_URL=http://localhost:3000/checkin
+CAMERA_DEVICE=/dev/video0
+CAMERA_BACKEND=v4l2
 ```
+
+If you see repeated V4L2 `select() timeout` warnings, verify that only one service is holding the physical webcam. The scanner now retries by reopening the camera, but persistent timeouts usually mean another container or host process is contending for the same device.
 
 ---
 
 ### Server
 
-> **Location:** `server/`  
+> **Location:** `server/`
 > **Runtime:** Python 3.13 · Pika · lxml
 
 The server is a lightweight HTTP service that acts as the authoritative gateway between the scanner client and the broader integration platform.
@@ -264,13 +269,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts three containers:
+This starts two containers:
 
 | Container | Port(s) | Description |
 |---|---|---|
 | `scanner` | `5000` | Badge scanner client |
 | `home-assistant` | `8123` | Home Assistant dashboard |
-| `go2rtc` | `8554`, `1984` | RTSP / WebRTC stream relay |
 
 The server has its own `Dockerfile` and is intended to be deployed separately as part of the wider integration platform.
 

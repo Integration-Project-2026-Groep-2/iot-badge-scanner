@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 SERVICE_TAG  = "iot-badge-scanner"
 HOST         = os.getenv("INTERNAL_HOST", "0.0.0.0")
 PORT         = int(os.getenv("EXTERNAL_PORT", "8080"))
-HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "30"))
+HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "1"))
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
