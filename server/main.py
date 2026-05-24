@@ -1,17 +1,17 @@
+import asyncio
 import json
 import os
+import sqlite3
 import sys
 import time
-import sqlite3
-import asyncio
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from threading import Thread, Lock
+from threading import Lock, Thread
 
-from lxml import etree
 import pika
-from pika.exceptions import AMQPError, AMQPConnectionError
+from lxml import etree
+from pika.exceptions import AMQPConnectionError, AMQPError
 
 # Add root to path for shared imports
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -34,7 +34,8 @@ RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 # Feature Flags
-KASSA_SIGN_IN_MODE = os.getenv("KASSA_SIGN_IN_MODE", "false").lower() == "true"
+# KASSA_SIGN_IN_MODE = os.getenv("KASSA_SIGN_IN_MODE", "false").lower() == "true"
+KASSA_SIGN_IN_MODE = False
 
 # RabbitMQ Exchange & Routing Configuration
 HEARTBEAT_EXCHANGE = "heartbeat.direct"
@@ -57,7 +58,9 @@ HEARTBEAT_XSD_PATH = "./xsd/heartbeat.xsd"
 
 # Retry Configuration
 PUBLISH_RETRIES = int(os.getenv("RABBITMQ_PUBLISH_RETRIES", "3"))
-PUBLISH_RETRY_DELAY_SECONDS = float(os.getenv("RABBITMQ_PUBLISH_RETRY_DELAY_SECONDS", "0.5"))
+PUBLISH_RETRY_DELAY_SECONDS = float(
+    os.getenv("RABBITMQ_PUBLISH_RETRY_DELAY_SECONDS", "0.5")
+)
 
 # SQLite Database
 DB_PATH = "users_muuid_table"
@@ -70,6 +73,7 @@ db_lock = Lock()
 
 
 # Database Management
+
 
 class UserDatabase:
     """Manages user UUID persistence."""
@@ -124,6 +128,7 @@ user_db = UserDatabase(DB_PATH)
 
 
 # RabbitMQ Connection & Setup
+
 
 def get_rabbitmq_connection() -> pika.BlockingConnection:
     """Create a RabbitMQ connection with retry and timeout settings."""
@@ -180,7 +185,9 @@ def setup_rabbitmq():
 
         # Declare kassa exchange if in kassa mode
         if KASSA_SIGN_IN_MODE:
-            logger.info("Declaring exchange: %s (KASSA mode)", KASSA_AUTHENTICATE_EXCHANGE)
+            logger.info(
+                "Declaring exchange: %s (KASSA mode)", KASSA_AUTHENTICATE_EXCHANGE
+            )
             channel.exchange_declare(
                 exchange=KASSA_AUTHENTICATE_EXCHANGE,
                 exchange_type="direct",
@@ -203,7 +210,9 @@ def setup_rabbitmq():
                 logger.warning("Error closing RabbitMQ connection: %s", e)
 
 
-def _declare_required_exchanges(channel: pika.adapters.blocking_connection.BlockingChannel):
+def _declare_required_exchanges(
+    channel: pika.adapters.blocking_connection.BlockingChannel,
+):
     """Declare all required exchanges on the given channel."""
     channel.exchange_declare(
         exchange=CHECKIN_EXCHANGE,
@@ -226,6 +235,7 @@ def _declare_required_exchanges(channel: pika.adapters.blocking_connection.Block
 
 
 # XSD Schema Loading
+
 
 def load_xsd_schema(path: str) -> etree.XMLSchema:
     """Load and parse an XSD schema from a file."""
@@ -251,6 +261,7 @@ def load_xsd_schema(path: str) -> etree.XMLSchema:
 
 
 # Publishing with Retry Logic
+
 
 def _publish_with_retry(
     exchange: str,
@@ -316,6 +327,7 @@ def _publish_with_retry(
 
 
 # Check-in XML Building, Validation, and Publishing
+
 
 def build_checkin_xml(data: dict) -> bytes:
     """Build and serialize a check-in XML message."""
@@ -400,6 +412,7 @@ def publish_kassa_authenticate(xml_bytes: bytes):
 
 # Heartbeat XML Building, Validation, and Publishing
 
+
 def build_heartbeat_xml(data: dict) -> bytes:
     """Build and serialize a heartbeat XML message."""
     logger.info("Building heartbeat XML for service=%s", data.get("serviceId"))
@@ -477,6 +490,7 @@ def send_heartbeat():
 
 # CRM User Consumer
 
+
 def consume_crm_users():
     """Consume CRM user confirmation messages and store in database."""
     logger.info("Starting CRM user consumer")
@@ -543,7 +557,9 @@ def consume_crm_users():
             on_message_callback=on_message,
         )
 
-        logger.info("CRM user consumer listening on queue: %s", CRM_USER_CONFIRMED_QUEUE)
+        logger.info(
+            "CRM user consumer listening on queue: %s", CRM_USER_CONFIRMED_QUEUE
+        )
         channel.start_consuming()
 
     except AMQPConnectionError as e:
@@ -559,6 +575,7 @@ def consume_crm_users():
 
 
 # HTTP Request Handler
+
 
 class Handler(BaseHTTPRequestHandler):
     """HTTP request handler for check-in submissions."""
@@ -618,6 +635,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 # Server & Main
+
 
 def start_http_server():
     """Start the HTTP server."""
