@@ -27,6 +27,8 @@ services:
       - TZ=Europe/Brussels
     volumes:
       - ..:/app
+    devices:
+      - /dev/video0:/dev/video0
     networks:
       - home-network
     ports:
